@@ -187,7 +187,14 @@ async function beginSession(aid: string, offer?: SignalBody) {
     earlySignals = [];
     setPhase("connecting");
 
-    const devices = await cfg.resolveDevices();
+    // Device lookup must never stall or break a connection attempt: fall back to the system defaults.
+    const devices = await Promise.race([
+        cfg.resolveDevices(),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timed out")), 4000))
+    ]).catch(err => {
+        log("could not resolve the audio devices, using the system defaults:", err);
+        return { input: "", output: "" };
+    });
     if (run !== runId || session || startingAid !== aid) return;
     startingAid = null;
 

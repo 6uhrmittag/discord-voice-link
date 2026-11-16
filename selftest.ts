@@ -20,6 +20,8 @@ export interface SelfTestOptions {
     volume: number;
     jitterBufferMs: number;
     durationMs?: number;
+    /** How long the microphone may take to open before the test gives up. */
+    openTimeoutMs?: number;
 }
 
 export interface SelfTestState {
@@ -89,14 +91,29 @@ export function runSelfTest(options: SelfTestOptions, onUpdate: (state: SelfTest
     receiver.setSendEnabled(false);
     receiver.setReceiveMuted(false);
 
+    // Report right away, so the caller never sits on a click that shows nothing.
+    update({});
+    log("test")(`input device: ${options.inputDeviceId || "system default"}, output device: ${options.outputDeviceId || "system default"}`);
+
+    // getUserMedia can stay pending forever, for example when a permission request is never answered.
+    const openTimeoutMs = options.openTimeoutMs ?? 8000;
+    const openTimer = setTimeout(
+        () => end(`The microphone did not open within ${openTimeoutMs / 1000} seconds. Discord's window never got an answer to its microphone request.`),
+        openTimeoutMs
+    );
+
     Promise.all([sender.start(), receiver.start()]).then(() => {
+        clearTimeout(openTimer);
         if (ended) return;
         statsTimer = setInterval(async () => {
             const [received, sent] = await Promise.all([receiver.getStats(), sender.getStats()]);
             if (!ended && received) update({ stats: { ...received, sendPacketsPerSec: sent?.sendPacketsPerSec ?? null, sendFrameMs: sent?.sendFrameMs ?? null } });
         }, 1000);
         endTimer = setTimeout(() => end(state.connected ? null : "The two test sessions did not connect"), options.durationMs ?? 10000);
-    }, err => end(describeMicError(err)));
+    }, err => {
+        clearTimeout(openTimer);
+        end(describeMicError(err));
+    });
 
     return () => end();
 }

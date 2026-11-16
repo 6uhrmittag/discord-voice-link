@@ -102,6 +102,13 @@ function StatusPanel() {
     );
 }
 
+function withTimeout<T>(promise: Promise<T>, ms: number, what: string) {
+    return Promise.race([
+        promise,
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error(`${what} took longer than ${ms / 1000} seconds`)), ms))
+    ]);
+}
+
 function describeSelfTest(test: SelfTestState) {
     if (test.error) return `Failed: ${test.error}`;
     if (test.running) return test.connected ? "Running. Speak: you should hear yourself with a very short delay." : "Starting...";
@@ -115,10 +122,20 @@ function SelfTest() {
 
     async function start() {
         const { inputDevice, outputDevice, lanVolume, jitterBufferMs } = settings.store;
-        const [input, output] = await Promise.all([
-            discord.resolveBrowserDevice("audioinput", inputDevice),
-            discord.resolveBrowserDevice("audiooutput", outputDevice)
-        ]);
+        log("self-test: button pressed");
+        setTest({ running: true, connected: false, error: null, stats: null, log: [] });
+
+        let input = "", output = "";
+        try {
+            [input, output] = await withTimeout(Promise.all([
+                discord.resolveBrowserDevice("audioinput", inputDevice),
+                discord.resolveBrowserDevice("audiooutput", outputDevice)
+            ]), 4000, "Listing the audio devices");
+        } catch (err) {
+            // Not fatal: carry on with the system default devices and say so.
+            log("self-test: could not resolve devices, using the system defaults:", err);
+        }
+
         const end = runSelfTest(
             { inputDeviceId: input, outputDeviceId: output, volume: lanVolume / 100, jitterBufferMs },
             state => {
@@ -144,7 +161,7 @@ function SelfTest() {
                     jitter buffer {formatMs(stats.jitterBufferMs)} (target {formatMs(stats.jitterBufferTargetMs)}, minimum {formatMs(stats.jitterBufferMinimumMs)}) · sending {stats.sendPacketsPerSec?.toFixed(0) ?? "n/a"} packets/s ({formatMs(stats.sendFrameMs)} frames) · lost {stats.packetsLost}
                 </Paragraph>
             )}
-            {test && !test.running && test.log.map((line, i) => <Paragraph key={i} className="vc-lanlink-stats vc-lanlink-hint">{line}</Paragraph>)}
+            {test && (!test.running || !test.connected) && test.log.map((line, i) => <Paragraph key={i} className="vc-lanlink-stats vc-lanlink-hint">{line}</Paragraph>)}
         </div>
     );
 }

@@ -345,3 +345,23 @@ test("callbacks of a replaced session are ignored", async () => {
     assert.equal(getLinkState().phase, "connecting");
     assert.deepEqual(sent, []);
 });
+
+test("a failing device lookup falls back to the default devices instead of stalling", async () => {
+    await startLink({ ...config(LOW, HIGH), resolveDevices: async () => { throw new Error("enumerateDevices broke"); } });
+    await flush();
+    await peerAppears();
+    assert.equal(sessions.length, 1);
+    assert.equal(last().opts.inputDeviceId, "");
+    assert.equal(last().opts.outputDeviceId, "");
+});
+
+test("a device lookup that never answers falls back after 4 seconds", async () => {
+    await startLink({ ...config(LOW, HIGH), resolveDevices: () => new Promise(() => { }) });
+    await flush();
+    await peerAppears();
+    assert.equal(sessions.length, 0);
+    mock.timers.tick(4000);
+    await flush();
+    assert.equal(sessions.length, 1);
+    assert.equal(last().opts.inputDeviceId, "");
+});
