@@ -1,0 +1,82 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>LanLink rtc.ts test</title>
+<style>
+    body { font: 14px system-ui, sans-serif; max-width: 900px; margin: 24px auto; padding: 0 16px; }
+    textarea { width: 100%; height: 110px; font: 12px monospace; }
+    pre { background: #f2f2f2; padding: 8px; max-height: 260px; overflow: auto; }
+    button { margin-right: 8px; }
+</style>
+<h1>LanLink rtc.ts test</h1>
+<p>Build <code>rtc.js</code> first: <code>npx esbuild rtc.ts --format=esm --outfile=dev/rtc.js</code>, then serve
+    this folder from <code>http://localhost</code> (for example <code>npx serve dev</code>).</p>
+
+<h2>Loopback</h2>
+<p>Two sessions inside this page, wired together directly. You hear your own mic through the full WebRTC path. Use
+    headphones.</p>
+<button id="loop">Start loopback</button>
+
+<h2>Two tabs or two PCs</h2>
+<p>Pick a role in each tab, then copy the outgoing box of one tab into the incoming box of the other and press Apply.
+    Offerer first, then the answerer's output back.</p>
+<button id="offer">Start as offerer</button><button id="answer">Start as answerer</button>
+<p>Outgoing</p><textarea id="out" readonly></textarea>
+<p>Incoming</p><textarea id="in"></textarea>
+<button id="apply">Apply</button>
+
+<h2>Stats</h2>
+<pre id="stats">not connected</pre>
+<h2>Log</h2>
+<pre id="log"></pre>
+
+<script type="module">
+    import { RtcSession } from "./rtc.js";
+
+    const $ = id => document.getElementById(id);
+    const log = (who, ...args) => {
+        $("log").textContent += `[${who}] ${args.map(a => typeof a === "string" ? a : JSON.stringify(a)).join(" ")}\n`;
+    };
+    // ?jb=<ms> overrides the jitter buffer target, ?jb=off leaves Chromium's default.
+    const jbParam = new URLSearchParams(location.search).get("jb");
+    const jitterBufferMs = jbParam === "off" ? undefined : Number(jbParam ?? 0);
+    const results = window.results = { connected: [], failed: [], stats: [], sdp: {} };
+
+    function make(name, offerer, send) {
+        const session = new RtcSession({
+            aid: "test", offerer, inputDeviceId: "", outputDeviceId: "", volume: 1, jitterBufferMs, peerIp: null,
+            send,
+            onConnected: () => { log(name, "connected"); results.connected.push(name); },
+            onFailed: reason => { log(name, "failed:", reason); results.failed.push(name); },
+            log: (...args) => log(name, ...args)
+        });
+        session.setSendEnabled(true);
+        session.setReceiveMuted(false);
+        setInterval(async () => {
+            const stats = await session.getStats();
+            if (!stats) return;
+            results.stats.push({ name, ...stats });
+            $("stats").textContent = `${name}: ${JSON.stringify(stats, null, 1)}`;
+        }, 1000);
+        return session;
+    }
+
+    $("loop").onclick = async () => {
+        let a, b;
+        a = make("a", true, s => { if (s.sdp) results.sdp[s.t] = s.sdp; b.handleSignal(s); });
+        b = make("b", false, s => { if (s.sdp) results.sdp[s.t] = s.sdp; a.handleSignal(s); });
+        window.sessions = { a, b };
+        await Promise.all([a.start(), b.start()]);
+    };
+
+    let manual;
+    const startManual = offerer => {
+        manual = make(offerer ? "offerer" : "answerer", offerer, s => { $("out").value += JSON.stringify(s) + "\n"; });
+        manual.start();
+    };
+    $("offer").onclick = () => startManual(true);
+    $("answer").onclick = () => startManual(false);
+    $("apply").onclick = () => {
+        for (const line of $("in").value.split("\n")) if (line.trim()) manual.handleSignal(JSON.parse(line));
+        $("in").value = "";
+    };
+</script>

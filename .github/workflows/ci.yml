@@ -1,0 +1,178 @@
+name: CI
+
+# push / pull request: test, build against the pinned Equicord commit (equicord.ref),
+#                      and on main publish a release.
+# schedule:            build against Equicord's newest commit. If that works and it is
+#                      newer than the pin, bump equicord.ref on main and start a release run.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 5 * * *"
+
+concurrency:
+  group: ci-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Unit tests and WebRTC loopback
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Unit tests
+        run: npm test
+      - name: WebRTC loopback in headless Chrome
+        run: |
+          export CHROME="$(command -v google-chrome || command -v chromium-browser || command -v chromium)"
+          npm run test:rtc
+
+  build:
+    name: Build into Equicord
+    runs-on: ubuntu-latest
+    outputs:
+      bump: ${{ steps.pick.outputs.bump }}
+      ref: ${{ steps.pick.outputs.ref }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: plugin
+
+      - name: Pick the Equicord commit
+        id: pick
+        run: |
+          pinned="$(tr -d '[:space:]' < plugin/equicord.ref)"
+          ref="$pinned"
+          bump=false
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            ref="$(git ls-remote https://github.com/Equicord/Equicord refs/heads/main | cut -f1)"
+            if [ "$ref" != "$pinned" ]; then bump=true; fi
+          fi
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+          echo "bump=$bump" >> "$GITHUB_OUTPUT"
+          echo "Equicord commit: $ref (pinned: $pinned, bump: $bump)" >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/checkout@v4
+        with:
+          repository: Equicord/Equicord
+          ref: ${{ steps.pick.outputs.ref }}
+          path: equicord
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install pnpm in the version Equicord pins
+        working-directory: equicord
+        run: npm install -g "pnpm@$(node -p "require('./package.json').packageManager.split('@')[1].split('+')[0]")"
+
+      - name: Put the plugin into Equicord
+        run: |
+          mkdir -p equicord/src/userplugins/lanLink
+          cp plugin/*.ts plugin/*.tsx plugin/*.css equicord/src/userplugins/lanLink/
+
+      - name: Install Equicord's dependencies
+        working-directory: equicord
+        run: pnpm install --frozen-lockfile
+
+      - name: Type-check
+        working-directory: equicord
+        run: pnpm testTsc
+
+      - name: Build
+        working-directory: equicord
+        env:
+          # The built-in updater of this build looks for releases in this repository
+          # and compares against this commit, so installs update themselves from here.
+          EQUICORD_REMOTE: ${{ github.repository }}
+          EQUICORD_HASH: ${{ github.sha }}
+        run: |
+          pnpm buildStandalone
+          grep -q LanLink dist/desktop/renderer.js
+          grep -q LanLink dist/desktop/patcher.js
+
+      - name: Package
+        run: |
+          mkdir -p out/lanLink
+          cp plugin/*.ts plugin/*.tsx plugin/*.css plugin/README.md plugin/LICENSE out/lanLink/
+          (cd out && zip -r lanLink-plugin.zip lanLink)
+          cp equicord/dist/desktop.asar out/desktop.asar
+          cp plugin/tools/install.ps1 out/install.ps1
+          ls -l out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lanlink-${{ github.sha }}
+          path: |
+            out/desktop.asar
+            out/lanLink-plugin.zip
+            out/install.ps1
+          if-no-files-found: error
+
+  release:
+    name: Publish release
+    needs: [test, build]
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: lanlink-${{ github.sha }}
+          path: out
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EQUICORD_REF: ${{ needs.build.outputs.ref }}
+        run: |
+          cat > notes.md <<NOTES
+          Equicord with the LanLink plugin built in.
+
+          - LanLink commit: ${{ github.sha }}
+          - Equicord commit: [\`${EQUICORD_REF:0:7}\`](https://github.com/Equicord/Equicord/commit/${EQUICORD_REF})
+          - Built by GitHub Actions run [#${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+
+          Install or update: see the README. \`desktop.asar\` is the file Equicord's updater downloads.
+          NOTES
+          # Equicord's updater reads the commit from the last word of the release title.
+          gh release create "build-${{ github.run_number }}" \
+            out/desktop.asar out/lanLink-plugin.zip out/install.ps1 \
+            --repo "${{ github.repository }}" \
+            --target "${{ github.sha }}" \
+            --title "LanLink build ${{ github.run_number }} ${{ github.sha }}" \
+            --notes-file notes.md \
+            --latest
+
+  bump:
+    name: Follow Equicord
+    needs: [test, build]
+    if: github.event_name == 'schedule' && needs.build.outputs.bump == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pin the new Equicord commit and start a release run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NEW_REF: ${{ needs.build.outputs.ref }}
+        run: |
+          echo "$NEW_REF" > equicord.ref
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "Follow Equicord to ${NEW_REF:0:7}"
+          git push
+          # A push made with the workflow token does not start workflows, so start it here.
+          gh workflow run ci.yml --ref main

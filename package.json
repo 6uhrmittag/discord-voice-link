@@ -1,0 +1,19 @@
+{
+    "name": "discord-voice-link",
+    "private": true,
+    "description": "LanLink: low latency LAN voice between two Discord clients (Equicord userplugin). This package.json only holds the test tooling.",
+    "license": "GPL-3.0-or-later",
+    "type": "module",
+    "engines": {
+        "node": ">=22"
+    },
+    "scripts": {
+        "test": "node --import tsx --test \"tests/*.test.ts\"",
+        "test:rtc": "esbuild rtc.ts --format=esm --outfile=dev/rtc.js && node tests/rtc-loopback.mjs"
+    },
+    "devDependencies": {
+        "esbuild": "^0.25.0",
+        "puppeteer-core": "^24.0.0",
+        "tsx": "^4.19.0"
+    }
+}
