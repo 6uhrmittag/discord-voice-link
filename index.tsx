@@ -121,7 +121,7 @@ function SelfTest() {
     useEffect(() => () => stop?.(), [stop]);
 
     async function start(measureDelay: boolean) {
-        const { inputDevice, outputDevice, lanVolume, jitterBufferMs } = settings.store;
+        const { inputDevice, outputDevice, lanVolume, jitterBufferMs, lowLatencyOutput } = settings.store;
         log("self-test: button pressed");
         setTest({ running: true, connected: false, error: null, stats: null, log: [], hint: null, delayRunsMs: [], delayMs: null });
 
@@ -137,7 +137,7 @@ function SelfTest() {
         }
 
         const end = runSelfTest(
-            { inputDeviceId: input, outputDeviceId: output, volume: lanVolume / 100, jitterBufferMs, measureDelay },
+            { inputDeviceId: input, outputDeviceId: output, volume: lanVolume / 100, jitterBufferMs, measureDelay, lowLatencyOutput },
             state => {
                 setTest(state);
                 if (!state.running) log("self-test:", state.error ?? "done", state.delayMs, state.stats, state.log);
@@ -159,7 +159,7 @@ function SelfTest() {
             </div>
             <Paragraph className="vc-lanlink-hint">
                 The test plays your own microphone back to you through the same path the LAN link uses. Needs no second PC. Wear headphones.
-                To measure the delay, hold one headphone cup directly against the microphone: five beeps are timed on their way through microphone, audio path and headphone.
+                To measure the delay, hold one headphone cup directly against the microphone: eight beeps are timed on their way through microphone, audio path and headphone.
             </Paragraph>
             {test?.hint && <Paragraph weight="medium">{test.hint}</Paragraph>}
             {test?.delayMs != null && (
@@ -242,6 +242,12 @@ const settings = definePluginSettings({
         default: 0,
         onChange: reconfigure
     },
+    lowLatencyOutput: {
+        type: OptionType.BOOLEAN,
+        description: "Experimental: play LAN audio through a smaller output buffer. Compare with \"Measure the delay\" and switch it off again if the audio crackles.",
+        default: false,
+        onChange: reconfigure
+    },
     gateOnPushToTalk: {
         type: OptionType.BOOLEAN,
         description: "When Discord is in push to talk mode, only send LAN audio while the key is held.",
@@ -290,7 +296,7 @@ function isIpv4(value: string) {
 
 function configure() {
     if (!running) return;
-    const { enabled, peerUserId, sharedSecret, port, manualPeerIp, lanVolume, jitterBufferMs, inputDevice, outputDevice } = settings.store;
+    const { enabled, peerUserId, sharedSecret, port, manualPeerIp, lanVolume, jitterBufferMs, lowLatencyOutput, inputDevice, outputDevice } = settings.store;
     const uid = discord.getOwnId();
     const peerUid = peerUserId.trim();
     const manualIp = manualPeerIp.trim();
@@ -317,6 +323,7 @@ function configure() {
         manualIp,
         volume: lanVolume / 100,
         jitterBufferMs,
+        lowLatencyOutput,
         resolveDevices: async () => ({
             input: await discord.resolveBrowserDevice("audioinput", inputDevice),
             output: await discord.resolveBrowserDevice("audiooutput", outputDevice)

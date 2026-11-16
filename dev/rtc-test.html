@@ -40,11 +40,13 @@
     // ?jb=<ms> overrides the jitter buffer target, ?jb=off leaves Chromium's default.
     const jbParam = new URLSearchParams(location.search).get("jb");
     const jitterBufferMs = jbParam === "off" ? undefined : Number(jbParam ?? 0);
+    // ?ll=1 plays through the experimental low latency output.
+    const lowLatencyOutput = new URLSearchParams(location.search).get("ll") === "1";
     const results = window.results = { connected: [], failed: [], stats: [], sdp: {} };
 
     function make(name, offerer, send) {
         const session = new RtcSession({
-            aid: "test", offerer, inputDeviceId: "", outputDeviceId: "", volume: 1, jitterBufferMs, peerIp: null,
+            aid: "test", offerer, inputDeviceId: "", outputDeviceId: "", volume: 1, jitterBufferMs, lowLatencyOutput, peerIp: null,
             send,
             onConnected: () => { log(name, "connected"); results.connected.push(name); },
             onFailed: reason => { log(name, "failed:", reason); results.failed.push(name); },
@@ -72,7 +74,7 @@
     // The same code as the "Test audio on this PC" button in the plugin settings.
     window.selfTestFrames = [];
     $("selftest").onclick = () => {
-        runSelfTest({ inputDeviceId: "", outputDeviceId: "", volume: 1, jitterBufferMs: jitterBufferMs ?? 0, durationMs: 6000 }, state => {
+        runSelfTest({ inputDeviceId: "", outputDeviceId: "", volume: 1, jitterBufferMs: jitterBufferMs ?? 0, durationMs: 6000, lowLatencyOutput }, state => {
             window.selfTest = state;
             const frame = state.stats?.sendFrameMs;
             if (frame != null && frame !== window.selfTestFrames.at(-1)) window.selfTestFrames.push(frame);

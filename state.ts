@@ -65,6 +65,7 @@ export interface LinkConfig {
     manualIp: string;
     volume: number;
     jitterBufferMs: number;
+    lowLatencyOutput: boolean;
     resolveDevices(): Promise<{ input: string; output: string; }>;
 }
 
@@ -205,6 +206,7 @@ async function beginSession(aid: string, offer?: SignalBody) {
         outputDeviceId: devices.output,
         volume: cfg.volume,
         jitterBufferMs: cfg.jitterBufferMs,
+        lowLatencyOutput: cfg.lowLatencyOutput,
         peerIp: peer.addr,
         send: signal => void Native.send(signal),
         onConnected: () => {

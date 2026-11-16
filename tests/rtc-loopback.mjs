@@ -39,11 +39,12 @@ const browser = await puppeteer.launch({
     args: ["--no-sandbox", "--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream", "--autoplay-policy=no-user-gesture-required"]
 });
 
-try {
+async function run(query) {
     const page = await browser.newPage();
     const pageErrors = [];
     page.on("pageerror", err => pageErrors.push(err.message));
-    await page.goto(`http://127.0.0.1:${server.address().port}/`);
+    await page.goto(`http://127.0.0.1:${server.address().port}/${query}`);
+    console.log(`--- ${query || "default output"}`);
     console.log(await page.evaluate(() => navigator.userAgent));
     await page.click("#loop");
 
@@ -88,7 +89,14 @@ try {
     assert.ok(selfTestFrame > 9 && selfTestFrame < 11.5, `self-test: ${selfTestFrame} ms of audio per packet, expected 10`);
     assert.ok(selfTest.stats.jitterBufferMs > 0, "audio arrived at the receiving side");
     console.log("self-test", JSON.stringify(selfTest.stats));
+    if (query) assert.ok(log.concat(selfTest.log.join("\n")).includes("low latency output: base latency"), "the low latency output was used");
     console.log("self-test ok");
+    await page.close();
+}
+
+try {
+    await run("");
+    await run("?ll=1");
 } finally {
     await browser.close();
     server.close();

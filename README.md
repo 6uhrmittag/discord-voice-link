@@ -78,10 +78,11 @@ Stuck on `discovering`? In this order:
 | Output device | Where LAN audio plays. "Same as Discord" picks Discord's output device by name |
 | LAN volume | Volume of the other person over the LAN. Discord's own volume slider for them does nothing while they're muted there |
 | Jitter buffer target | 0 ms = lowest delay. Raise it if the audio crackles |
+| Low latency output | Experimental. Plays LAN audio through a smaller output buffer. Check with **Measure the delay** whether it helps on your PC; switch it off if the audio crackles |
 | Gate on push to talk | In push-to-talk mode, send LAN audio only while Discord shows you as speaking |
 | Show stats | RTT, jitter buffer delay (with its own target and minimum), jitter, packet loss, packets per second and frame size, here and in the console as `[LanLink]` |
 | Test audio on this PC | 30 seconds of your own microphone through the full LAN audio path, with the jitter buffer numbers. Changes nothing in Discord |
-| Measure the delay | Hold one headphone cup directly against the microphone. Five beeps are timed on their way through microphone, audio path and headphone. The result is the delay of the LAN audio path on this PC, without the network (which adds under 1 ms on a cable) |
+| Measure the delay | Hold one headphone cup directly against the microphone. Eight beeps are timed on their way through microphone, audio path and headphone. The result is the delay of the LAN audio path on this PC, without the network (which adds under 1 ms on a cable) |
 
 Changing a setting restarts the link.
 
@@ -138,10 +139,10 @@ The stats only cover network and jitter buffer, not microphone and headphone buf
 | Path | Mouth to ear | Jitter buffer (stats) | RTT (stats) |
 |---|---|---|---|
 | Discord only | not yet measured | | |
-| LanLink, one PC (Measure the delay) | not yet measured | 30 ms (first PC, Razer Seiren V3 Mini) | |
+| LanLink, one PC (Measure the delay) | about 90–105 ms (first PC, first version of the measurement, 3 of 5 beeps) | 21–30 ms | |
 | LanLink, two PCs | not yet measured | not yet measured | not yet measured |
 
-The jitter buffer is the part to watch. Chromium doesn't go to the 0 ms that LanLink asks for; it keeps its own minimum. On the first real PC that was 30 ms (minimum 20 ms) with the microphone and headphones picked by name in the settings, and 60 ms in an earlier run on the Windows default devices. One run each, so whether the device choice is the reason isn't known yet. **Test audio on this PC** shows the numbers. If it doesn't come down to about 20 ms or less on real hardware, WebRTC inside Discord can't reach the goal. Plan B is then [SonoBus](https://sonobus.net/) for the audio, with LanLink reduced to finding the peer, auto-mute and the pill.
+The jitter buffer is the part to watch. Chromium doesn't go to the 0 ms that LanLink asks for; it keeps its own minimum. On the first real PC it settled at 21–30 ms (minimum 20 ms) in two runs and sat at 60 ms in the very first one; the device choice made no difference. **Test audio on this PC** shows the numbers. The rest of the delay is microphone capture, encoding and headphone output. If the whole path can't be brought near the goal, Plan B is [SonoBus](https://sonobus.net/) for the audio, with LanLink reduced to finding the peer, auto-mute and the pill.
 
 ## Known limits
 

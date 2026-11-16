@@ -27,6 +27,7 @@ export interface SelfTestOptions {
      * against the microphone; a beep is played and timed on its way round.
      */
     measureDelay?: boolean;
+    lowLatencyOutput?: boolean;
 }
 
 export interface SelfTestState {
@@ -48,7 +49,7 @@ const BEEP_HZ = 2000;
 /** The beep's own ringing is over after this; anything later is the copy that went round. */
 const ECHO_GAP_MS = 30;
 const SETTLE_MS = 5000;
-const RUNS = 5;
+const RUNS = 8;
 const RUN_MS = 1200;
 
 /**
@@ -60,20 +61,44 @@ const RUN_MS = 1200;
  * because both beeps are recorded the same way.
  */
 export function findEchoDelay(samples: Float32Array, sampleRate: number): { delayMs: number; } | { error: string; } {
-    const magnitudes = Array.from(samples, Math.abs);
-    const sorted = [...magnitudes].sort((a, b) => a - b);
-    const floor = sorted[Math.floor(sorted.length / 2)];
-    const peak = sorted[sorted.length - 1] ?? 0;
-    if (peak < Math.max(0.01, floor * 10)) return { error: "The microphone did not pick up the test beep" };
+    // Loudness of the beep's own frequency over time. Handling noise and voices
+    // are spread over all frequencies and mostly drop out here.
+    const window = Math.round(BEEP_MS / 1000 * sampleRate);
+    const step = 2 * Math.PI * BEEP_HZ / sampleRate;
+    const envelope = new Float32Array(Math.max(0, samples.length - window));
+    let i = 0, q = 0;
+    for (let n = 0; n < samples.length; n++) {
+        i += samples[n] * Math.cos(step * n);
+        q += samples[n] * Math.sin(step * n);
+        if (n >= window) {
+            i -= samples[n - window] * Math.cos(step * (n - window));
+            q -= samples[n - window] * Math.sin(step * (n - window));
+            envelope[n - window] = Math.hypot(i, q) * 2 / window;
+        }
+    }
 
-    const first = magnitudes.findIndex(m => m > peak * 0.3);
+    const sorted = Float32Array.from(envelope).sort();
+    const floor = sorted[Math.floor(sorted.length / 2)] ?? 0;
+    const peak = sorted[sorted.length - 1] ?? 0;
+    if (peak < Math.max(0.004, floor * 8)) return { error: "The microphone did not pick up the test beep" };
+
+    // Start of a beep: where the loudness first crosses the threshold, then the loudest point close by.
+    const search = Math.round(0.008 * sampleRate);
+    const beepAt = (from: number, threshold: number) => {
+        let at = from;
+        while (at < envelope.length && envelope[at] <= threshold) at++;
+        let best = at;
+        for (let k = at; k < Math.min(envelope.length, at + search); k++) if (envelope[k] > envelope[best]) best = k;
+        return best;
+    };
+
+    const first = beepAt(0, peak * 0.3);
     const from = first + Math.round(ECHO_GAP_MS / 1000 * sampleRate);
     let echoPeak = 0;
-    for (let i = from; i < magnitudes.length; i++) echoPeak = Math.max(echoPeak, magnitudes[i]);
-    if (echoPeak < Math.max(floor * 10, peak * 0.05)) return { error: "The beep did not come back through the audio path" };
+    for (let k = from; k < envelope.length; k++) echoPeak = Math.max(echoPeak, envelope[k]);
+    if (echoPeak < Math.max(floor * 8, peak * 0.05)) return { error: "The beep did not come back through the audio path" };
 
-    let second = from;
-    while (magnitudes[second] <= echoPeak * 0.3) second++;
+    const second = beepAt(from, echoPeak * 0.5);
     return { delayMs: (second - first) / sampleRate * 1000 };
 }
 
@@ -183,6 +208,11 @@ export function runSelfTest(options: SelfTestOptions, onUpdate: (state: SelfTest
                 update({ delayRunsMs: [...runs], delayMs: median(runs) });
             }
         }
+        if (runs.length >= 3) {
+            const mid = median(runs);
+            const agreeing = runs.filter(ms => Math.abs(ms - mid) <= 15).length;
+            log("test")(`${agreeing} of ${runs.length} beeps are within 15 ms of the median`);
+        }
         if (runs.length < 3) end(`${lastError || "Too few beeps came back"}. Press the headphone cup right onto the microphone and raise the LAN volume or the headphone volume.`);
         else end();
     }
@@ -193,6 +223,7 @@ export function runSelfTest(options: SelfTestOptions, onUpdate: (state: SelfTest
         outputDeviceId: options.outputDeviceId,
         volume: options.volume,
         jitterBufferMs: options.jitterBufferMs,
+        lowLatencyOutput: options.lowLatencyOutput ?? false,
         peerIp: null
     };
 

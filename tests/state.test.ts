@@ -43,7 +43,7 @@ async function flush() {
 
 function config(uid: string, peerUid: string): LinkConfig {
     return {
-        uid, peerUid, secret: "s", port: 47820, manualIp: "", volume: 1, jitterBufferMs: 0,
+        uid, peerUid, secret: "s", port: 47820, manualIp: "", volume: 1, jitterBufferMs: 0, lowLatencyOutput: false,
         resolveDevices: async () => ({ input: "mic", output: "phones" })
     };
 }
