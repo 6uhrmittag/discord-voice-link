@@ -105,11 +105,18 @@ export function runSelfTest(options: SelfTestOptions, onUpdate: (state: SelfTest
     Promise.all([sender.start(), receiver.start()]).then(() => {
         clearTimeout(openTimer);
         if (ended) return;
+        let seconds = 0;
         statsTimer = setInterval(async () => {
             const [received, sent] = await Promise.all([receiver.getStats(), sender.getStats()]);
-            if (!ended && received) update({ stats: { ...received, sendPacketsPerSec: sent?.sendPacketsPerSec ?? null, sendFrameMs: sent?.sendFrameMs ?? null } });
+            if (ended || !received) return;
+            update({ stats: { ...received, sendPacketsPerSec: sent?.sendPacketsPerSec ?? null, sendFrameMs: sent?.sendFrameMs ?? null } });
+            // Keep a trail: the jitter buffer starts high and may settle over time.
+            if (++seconds % 5 === 0) {
+                const ms = (value: number | null) => value == null ? "n/a" : `${value.toFixed(0)} ms`;
+                log("test")(`after ${seconds} s: jitter buffer ${ms(received.jitterBufferMs)}, target ${ms(received.jitterBufferTargetMs)}, minimum ${ms(received.jitterBufferMinimumMs)}, network jitter ${ms(received.jitterMs)}`);
+            }
         }, 1000);
-        endTimer = setTimeout(() => end(state.connected ? null : "The two test sessions did not connect"), options.durationMs ?? 10000);
+        endTimer = setTimeout(() => end(state.connected ? null : "The two test sessions did not connect"), options.durationMs ?? 30000);
     }, err => {
         clearTimeout(openTimer);
         end(describeMicError(err));

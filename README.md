@@ -45,7 +45,7 @@ Both people do this:
    - **Peer user ID**: the other person's Discord user ID (Settings → Advanced → Developer Mode, then right-click them → Copy User ID)
    - **Shared secret**: any text, the same on both PCs
 
-**Try it alone first:** the LanLink settings have a button **Test audio on this PC (10 s)**. It plays your own microphone back to you through the same path the link uses, no second PC needed. You should hear yourself with a very short delay. If it fails, the message says why (usually the microphone).
+**Try it alone first:** the LanLink settings have a button **Test audio on this PC (30 s)**. It plays your own microphone back to you through the same path the link uses, no second PC needed. You should hear yourself with a very short delay. If it fails, the message says why (usually the microphone).
 
 Join the same voice channel. The status line in the LanLink settings goes `discovering` → `connecting` → `connected`, and a green **LAN** pill appears next to the other person in the voice channel.
 
@@ -80,7 +80,7 @@ Stuck on `discovering`? In this order:
 | Jitter buffer target | 0 ms = lowest delay. Raise it if the audio crackles |
 | Gate on push to talk | In push-to-talk mode, send LAN audio only while Discord shows you as speaking |
 | Show stats | RTT, jitter buffer delay (with its own target and minimum), jitter, packet loss, packets per second and frame size, here and in the console as `[LanLink]` |
-| Test audio on this PC | 10 seconds of your own microphone through the full LAN audio path, with the jitter buffer numbers. Changes nothing in Discord |
+| Test audio on this PC | 30 seconds of your own microphone through the full LAN audio path, with the jitter buffer numbers. Changes nothing in Discord |
 
 Changing a setting restarts the link.
 

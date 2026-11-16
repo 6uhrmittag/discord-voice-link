@@ -150,7 +150,7 @@ function SelfTest() {
     return (
         <div className="vc-lanlink-selftest">
             <Button size="small" variant="secondary" disabled={test?.running} onClick={start}>
-                Test audio on this PC (10 s)
+                Test audio on this PC (30 s)
             </Button>
             <Paragraph className="vc-lanlink-hint">
                 Plays your own microphone back to you through the same path the LAN link uses. Needs no second PC. Wear headphones.
