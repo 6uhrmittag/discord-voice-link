@@ -78,7 +78,6 @@ Stuck on `discovering`? In this order:
 | Output device | Where LAN audio plays. "Same as Discord" picks Discord's output device by name |
 | LAN volume | Volume of the other person over the LAN. Discord's own volume slider for them does nothing while they're muted there |
 | Jitter buffer target | 0 ms = lowest delay. Raise it if the audio crackles |
-| Low latency output | Experimental. Plays LAN audio through a smaller output buffer. Check with **Measure the delay** whether it helps on your PC; switch it off if the audio crackles |
 | Gate on push to talk | In push-to-talk mode, send LAN audio only while Discord shows you as speaking |
 | Show stats | RTT, jitter buffer delay (with its own target and minimum), jitter, packet loss, packets per second and frame size, here and in the console as `[LanLink]` |
 | Test audio on this PC | 30 seconds of your own microphone through the full LAN audio path, with the jitter buffer numbers. Changes nothing in Discord |
@@ -126,7 +125,7 @@ Every push runs in [GitHub Actions](.github/workflows/ci.yml):
 - [ ] Auto-mute and restore in the real client (leave channel, switch channel, pull the cable, close Discord, kill Discord)
 - [ ] The **LAN** pill in the voice channel (the patch may not match the current Discord build; the link works without it)
 - [ ] Push to talk
-- [ ] Latency
+- [ ] Latency between two PCs, and Discord's own for comparison (the LAN audio path on one PC is measured: 105 ms)
 
 Built so far against Equicord [`87dcb6a`](https://github.com/Equicord/Equicord/commit/87dcb6a316a00616a99495f508b11b12b68c064a). Discord at the time: stable 1.0.9268 (Chromium 152).
 
@@ -139,10 +138,10 @@ The stats only cover network and jitter buffer, not microphone and headphone buf
 | Path | Mouth to ear | Jitter buffer (stats) | RTT (stats) |
 |---|---|---|---|
 | Discord only | not yet measured | | |
-| LanLink, one PC (Measure the delay) | about 90–105 ms (first PC, first version of the measurement, 3 of 5 beeps) | 21–30 ms | |
+| LanLink, one PC (Measure the delay) | **105 ms** (first PC, 8 of 8 beeps within 2 ms) | 30 ms | |
 | LanLink, two PCs | not yet measured | not yet measured | not yet measured |
 
-The jitter buffer is the part to watch. Chromium doesn't go to the 0 ms that LanLink asks for; it keeps its own minimum. On the first real PC it settled at 21–30 ms (minimum 20 ms) in two runs and sat at 60 ms in the very first one; the device choice made no difference. **Test audio on this PC** shows the numbers. The rest of the delay is microphone capture, encoding and headphone output. If the whole path can't be brought near the goal, Plan B is [SonoBus](https://sonobus.net/) for the audio, with LanLink reduced to finding the peer, auto-mute and the pill.
+The jitter buffer is the part to watch. Chromium doesn't go to the 0 ms that LanLink asks for; it keeps its own minimum. On the first real PC it settled at 21–30 ms (minimum 20 ms) in two runs and sat at 60 ms in the very first one; the device choice made no difference. **Test audio on this PC** shows the numbers. The rest of the delay, about 75 ms on that PC, is microphone capture, encoding and headphone output inside Chromium. Playing through a WebAudio context with the smallest output buffer was tried and made it worse (about 127 ms), so that was removed again. If the whole path can't be brought near the goal, Plan B is [SonoBus](https://sonobus.net/) for the audio, with LanLink reduced to finding the peer, auto-mute and the pill.
 
 ## Known limits
 

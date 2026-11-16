@@ -39,11 +39,6 @@ export interface RtcOptions {
     /** 0..1 */
     volume: number;
     jitterBufferMs: number;
-    /**
-     * Experimental. Plays the remote audio through a WebAudio context that asks for the
-     * smallest output buffer, instead of through the media element.
-     */
-    lowLatencyOutput: boolean;
     /** Peer address known from discovery. Used to replace mDNS (.local) host candidates. */
     peerIp: string | null;
     send(signal: RtcSignal): void;
@@ -143,8 +138,6 @@ export class RtcSession {
     private pc: RTCPeerConnection | null = null;
     private micStream: MediaStream | null = null;
     private audio: HTMLAudioElement | null = null;
-    private context: AudioContext | null = null;
-    private gain: GainNode | null = null;
     private pendingCandidates: RTCIceCandidateInit[] = [];
     private remoteSet = false;
     private closed = false;
@@ -278,46 +271,15 @@ export class RtcSession {
         }
 
         // Remote WebRTC audio only plays reliably through a media element.
-        const stream = e.streams[0] ?? new MediaStream([e.track]);
         const audio = this.audio = new Audio();
         audio.autoplay = true;
-        audio.srcObject = stream;
+        audio.srcObject = e.streams[0] ?? new MediaStream([e.track]);
         audio.volume = volume;
         audio.muted = this.receiveMuted;
         if (outputDeviceId) {
             audio.setSinkId(outputDeviceId).catch(err => log("setSinkId failed, using default output:", err));
         }
         audio.play().catch(err => log("audio.play failed:", err));
-
-        if (this.opts.lowLatencyOutput) this.useLowLatencyOutput(stream);
-    }
-
-    /**
-     * The media element stays attached (Chromium needs it to keep the remote stream
-     * running) but is silenced, and a WebAudio context with the smallest output buffer
-     * does the playing. Falls back to the element if anything here fails.
-     */
-    private useLowLatencyOutput(stream: MediaStream) {
-        const { outputDeviceId, volume, log } = this.opts;
-        try {
-            const context = this.context = new AudioContext({ latencyHint: 0 });
-            const gain = this.gain = context.createGain();
-            gain.gain.value = this.receiveMuted ? 0 : volume;
-            context.createMediaStreamSource(stream).connect(gain).connect(context.destination);
-            if (this.audio) this.audio.muted = true;
-            if (outputDeviceId && "setSinkId" in context) {
-                (context as AudioContext & { setSinkId(id: string): Promise<void>; }).setSinkId(outputDeviceId)
-                    .catch(err => log("low latency output: setSinkId failed, using default output:", err));
-            }
-            void context.resume().then(() => log(
-                `low latency output: base latency ${(context.baseLatency * 1000).toFixed(1)} ms, output latency ${((context.outputLatency ?? 0) * 1000).toFixed(1)} ms, state ${context.state}`
-            ));
-        } catch (err) {
-            log("low latency output failed, playing through the media element:", err);
-            void this.context?.close();
-            this.context = this.gain = null;
-            if (this.audio) this.audio.muted = this.receiveMuted;
-        }
     }
 
     private fail(reason: string) {
@@ -336,14 +298,12 @@ export class RtcSession {
     /** Silences incoming LAN audio. */
     setReceiveMuted(muted: boolean) {
         this.receiveMuted = muted;
-        if (this.gain) this.gain.gain.value = muted ? 0 : this.opts.volume;
-        else if (this.audio) this.audio.muted = muted;
+        if (this.audio) this.audio.muted = muted;
     }
 
     setVolume(volume: number) {
         this.opts.volume = volume;
         if (this.audio) this.audio.volume = volume;
-        if (this.gain && !this.receiveMuted) this.gain.gain.value = volume;
     }
 
     async getStats(): Promise<RtcStats | null> {
@@ -399,8 +359,6 @@ export class RtcSession {
             this.pc.onicecandidate = this.pc.oniceconnectionstatechange = this.pc.ontrack = null;
             this.pc.close();
         }
-        void this.context?.close();
-        this.context = this.gain = null;
         this.micStream = null;
         this.audio = null;
         this.pc = null;

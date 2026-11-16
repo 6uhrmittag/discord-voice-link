@@ -89,14 +89,12 @@ async function run(query) {
     assert.ok(selfTestFrame > 9 && selfTestFrame < 11.5, `self-test: ${selfTestFrame} ms of audio per packet, expected 10`);
     assert.ok(selfTest.stats.jitterBufferMs > 0, "audio arrived at the receiving side");
     console.log("self-test", JSON.stringify(selfTest.stats));
-    if (query) assert.ok(log.concat(selfTest.log.join("\n")).includes("low latency output: base latency"), "the low latency output was used");
     console.log("self-test ok");
     await page.close();
 }
 
 try {
     await run("");
-    await run("?ll=1");
 } finally {
     await browser.close();
     server.close();

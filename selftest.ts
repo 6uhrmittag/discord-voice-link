@@ -27,7 +27,6 @@ export interface SelfTestOptions {
      * against the microphone; a beep is played and timed on its way round.
      */
     measureDelay?: boolean;
-    lowLatencyOutput?: boolean;
 }
 
 export interface SelfTestState {
@@ -223,7 +222,6 @@ export function runSelfTest(options: SelfTestOptions, onUpdate: (state: SelfTest
         outputDeviceId: options.outputDeviceId,
         volume: options.volume,
         jitterBufferMs: options.jitterBufferMs,
-        lowLatencyOutput: options.lowLatencyOutput ?? false,
         peerIp: null
     };
 

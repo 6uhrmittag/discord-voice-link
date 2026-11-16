@@ -121,7 +121,7 @@ function SelfTest() {
     useEffect(() => () => stop?.(), [stop]);
 
     async function start(measureDelay: boolean) {
-        const { inputDevice, outputDevice, lanVolume, jitterBufferMs, lowLatencyOutput } = settings.store;
+        const { inputDevice, outputDevice, lanVolume, jitterBufferMs } = settings.store;
         log("self-test: button pressed");
         setTest({ running: true, connected: false, error: null, stats: null, log: [], hint: null, delayRunsMs: [], delayMs: null });
 
@@ -137,7 +137,7 @@ function SelfTest() {
         }
 
         const end = runSelfTest(
-            { inputDeviceId: input, outputDeviceId: output, volume: lanVolume / 100, jitterBufferMs, measureDelay, lowLatencyOutput },
+            { inputDeviceId: input, outputDeviceId: output, volume: lanVolume / 100, jitterBufferMs, measureDelay },
             state => {
                 setTest(state);
                 if (!state.running) log("self-test:", state.error ?? "done", state.delayMs, state.stats, state.log);
@@ -242,12 +242,6 @@ const settings = definePluginSettings({
         default: 0,
         onChange: reconfigure
     },
-    lowLatencyOutput: {
-        type: OptionType.BOOLEAN,
-        description: "Experimental: play LAN audio through a smaller output buffer. Compare with \"Measure the delay\" and switch it off again if the audio crackles.",
-        default: false,
-        onChange: reconfigure
-    },
     gateOnPushToTalk: {
         type: OptionType.BOOLEAN,
         description: "When Discord is in push to talk mode, only send LAN audio while the key is held.",
@@ -296,7 +290,7 @@ function isIpv4(value: string) {
 
 function configure() {
     if (!running) return;
-    const { enabled, peerUserId, sharedSecret, port, manualPeerIp, lanVolume, jitterBufferMs, lowLatencyOutput, inputDevice, outputDevice } = settings.store;
+    const { enabled, peerUserId, sharedSecret, port, manualPeerIp, lanVolume, jitterBufferMs, inputDevice, outputDevice } = settings.store;
     const uid = discord.getOwnId();
     const peerUid = peerUserId.trim();
     const manualIp = manualPeerIp.trim();
@@ -323,7 +317,6 @@ function configure() {
         manualIp,
         volume: lanVolume / 100,
         jitterBufferMs,
-        lowLatencyOutput,
         resolveDevices: async () => ({
             input: await discord.resolveBrowserDevice("audioinput", inputDevice),
             output: await discord.resolveBrowserDevice("audiooutput", outputDevice)

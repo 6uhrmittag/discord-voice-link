@@ -139,11 +139,20 @@ plugin keeps its multi-file split on purpose (testability).
 
 ---
 
-## Open questions (as of the first release)
+## Measured so far
 
-1. Does `getUserMedia` open the mic while Discord's voice engine holds it? Discord's
-   permission handlers allow it for its own origin (checked in `discord_desktop_core`), but it
-   has not run on real hardware.
+- Marv's PC, 2026-11-16, "Measure the delay" (beep, headphone held to the mic): **105 ms** mic to
+  headphone, 8 of 8 beeps within 2 ms. Jitter buffer 30 ms (Chromium's own minimum 20 ms; the 0 ms
+  target is not honoured). Marv hears it as "a tight double, less than Discord, stable".
+- So roughly 75 ms is capture + Opus + output inside Chromium. Not at the 35–60 ms goal.
+- Tried and removed: playback through `AudioContext({ latencyHint: 0 })` instead of the media
+  element. Measured about 127 ms, i.e. 22 ms worse. Don't retry without a new idea.
+- Per the guardrails: no native audio addon. If this is not good enough for Marv and Void, the
+  next step is SonoBus for audio, not more WebRTC tuning.
+
+## Open questions
+
+1. (Answered: yes.) `getUserMedia` opens the mic while Discord's voice engine holds it.
 2. Jitter buffer floor. Headless Chrome reported 40–260 ms minimum regardless of target. Likely
    an artifact of the fake audio device. First thing to read on real PCs: the self-test button
    in the settings shows it without a second PC.
