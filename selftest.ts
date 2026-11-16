@@ -22,6 +22,11 @@ export interface SelfTestOptions {
     durationMs?: number;
     /** How long the microphone may take to open before the test gives up. */
     openTimeoutMs?: number;
+    /**
+     * Measure the delay of the whole audio path. The user holds a headphone cup
+     * against the microphone; a beep is played and timed on its way round.
+     */
+    measureDelay?: boolean;
 }
 
 export interface SelfTestState {
@@ -31,11 +36,90 @@ export interface SelfTestState {
     /** Stats of the receiving side, with the sending side's packet rate and frame size. */
     stats: RtcStats | null;
     log: string[];
+    /** What the user should do right now, if anything. */
+    hint: string | null;
+    /** Measured delays of the single runs, and their median. */
+    delayRunsMs: number[];
+    delayMs: number | null;
+}
+
+const BEEP_MS = 4;
+const BEEP_HZ = 2000;
+/** The beep's own ringing is over after this; anything later is the copy that went round. */
+const ECHO_GAP_MS = 30;
+const SETTLE_MS = 5000;
+const RUNS = 5;
+const RUN_MS = 1200;
+
+/**
+ * Finds a beep and its first repetition in a microphone recording and returns
+ * the time between the two. With a headphone held against the microphone the
+ * recording contains the beep as played, then the same beep after it went
+ * through the microphone, the audio link and the headphone again. The gap is
+ * the delay of that whole path. The delay of the recording itself cancels out,
+ * because both beeps are recorded the same way.
+ */
+export function findEchoDelay(samples: Float32Array, sampleRate: number): { delayMs: number; } | { error: string; } {
+    const magnitudes = Array.from(samples, Math.abs);
+    const sorted = [...magnitudes].sort((a, b) => a - b);
+    const floor = sorted[Math.floor(sorted.length / 2)];
+    const peak = sorted[sorted.length - 1] ?? 0;
+    if (peak < Math.max(0.01, floor * 10)) return { error: "The microphone did not pick up the test beep" };
+
+    const first = magnitudes.findIndex(m => m > peak * 0.3);
+    const from = first + Math.round(ECHO_GAP_MS / 1000 * sampleRate);
+    let echoPeak = 0;
+    for (let i = from; i < magnitudes.length; i++) echoPeak = Math.max(echoPeak, magnitudes[i]);
+    if (echoPeak < Math.max(floor * 10, peak * 0.05)) return { error: "The beep did not come back through the audio path" };
+
+    let second = from;
+    while (magnitudes[second] <= echoPeak * 0.3) second++;
+    return { delayMs: (second - first) / sampleRate * 1000 };
+}
+
+export function median(values: number[]) {
+    const sorted = [...values].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+/** Plays one beep on the output device and records the microphone for RUN_MS. */
+async function recordBeep(context: AudioContext, source: MediaStreamAudioSourceNode) {
+    const chunks: Float32Array[] = [];
+    // Deprecated, but needs no worklet module, which Discord's content security policy may block.
+    const recorder = context.createScriptProcessor(1024, 1, 1);
+    recorder.onaudioprocess = e => chunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+    const silent = context.createGain();
+    silent.gain.value = 0;
+    source.connect(recorder).connect(silent).connect(context.destination);
+
+    const beep = context.createOscillator();
+    const envelope = context.createGain();
+    const at = context.currentTime + 0.1;
+    beep.frequency.value = BEEP_HZ;
+    envelope.gain.setValueAtTime(0, at);
+    envelope.gain.linearRampToValueAtTime(0.8, at + 0.001);
+    envelope.gain.linearRampToValueAtTime(0, at + BEEP_MS / 1000);
+    beep.connect(envelope).connect(context.destination);
+    beep.start(at);
+    beep.stop(at + BEEP_MS / 1000 + 0.01);
+
+    await new Promise(resolve => setTimeout(resolve, RUN_MS));
+    recorder.disconnect();
+    source.disconnect(recorder);
+
+    const samples = new Float32Array(chunks.reduce((n, c) => n + c.length, 0));
+    let offset = 0;
+    for (const chunk of chunks) {
+        samples.set(chunk, offset);
+        offset += chunk.length;
+    }
+    return samples;
 }
 
 /** Starts the test. Returns a function that ends it early. */
 export function runSelfTest(options: SelfTestOptions, onUpdate: (state: SelfTestState) => void) {
-    let state: SelfTestState = { running: true, connected: false, error: null, stats: null, log: [] };
+    let state: SelfTestState = { running: true, connected: false, error: null, stats: null, log: [], hint: null, delayRunsMs: [], delayMs: null };
     let ended = false;
     let statsTimer: ReturnType<typeof setInterval> | null = null;
     let endTimer: ReturnType<typeof setTimeout> | null = null;
@@ -56,8 +140,52 @@ export function runSelfTest(options: SelfTestOptions, onUpdate: (state: SelfTest
         if (endTimer) clearTimeout(endTimer);
         sender.close();
         receiver.close();
-        update({ running: false, error });
+        measureStream?.getTracks().forEach(t => t.stop());
+        void measureContext?.close();
+        update({ running: false, error, hint: null });
     };
+
+    let measureStream: MediaStream | null = null;
+    let measureContext: AudioContext | null = null;
+
+    async function measure() {
+        update({ hint: "Hold one headphone cup directly against the microphone and keep quiet. Beeps follow in a few seconds." });
+        // The jitter buffer starts high and comes down during the first seconds.
+        await new Promise(resolve => setTimeout(resolve, SETTLE_MS));
+        if (ended) return;
+
+        const { inputDeviceId, outputDeviceId } = options;
+        measureStream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+                echoCancellation: false,
+                noiseSuppression: false,
+                autoGainControl: false,
+                ...(inputDeviceId ? { deviceId: { exact: inputDeviceId } } : {})
+            }
+        });
+        const context = measureContext = new AudioContext();
+        if (outputDeviceId && "setSinkId" in context) {
+            await (context as AudioContext & { setSinkId(id: string): Promise<void>; }).setSinkId(outputDeviceId);
+        }
+        const source = context.createMediaStreamSource(measureStream);
+
+        const runs: number[] = [];
+        let lastError = "";
+        for (let i = 0; i < RUNS && !ended; i++) {
+            update({ hint: `Measuring, beep ${i + 1} of ${RUNS}. Keep the headphone on the microphone.` });
+            const result = findEchoDelay(await recordBeep(context, source), context.sampleRate);
+            if ("error" in result) {
+                lastError = result.error;
+                log("test")(`beep ${i + 1}: ${result.error}`);
+            } else {
+                runs.push(result.delayMs);
+                log("test")(`beep ${i + 1}: ${result.delayMs.toFixed(0)} ms`);
+                update({ delayRunsMs: [...runs], delayMs: median(runs) });
+            }
+        }
+        if (runs.length < 3) end(`${lastError || "Too few beeps came back"}. Press the headphone cup right onto the microphone and raise the LAN volume or the headphone volume.`);
+        else end();
+    }
 
     const common = {
         aid: "selftest",
@@ -116,6 +244,10 @@ export function runSelfTest(options: SelfTestOptions, onUpdate: (state: SelfTest
                 log("test")(`after ${seconds} s: jitter buffer ${ms(received.jitterBufferMs)}, target ${ms(received.jitterBufferTargetMs)}, minimum ${ms(received.jitterBufferMinimumMs)}, network jitter ${ms(received.jitterMs)}`);
             }
         }, 1000);
+        if (options.measureDelay) {
+            measure().catch(err => end(`The measurement failed: ${err instanceof Error ? err.message : String(err)}`));
+            return;
+        }
         endTimer = setTimeout(() => end(state.connected ? null : "The two test sessions did not connect"), options.durationMs ?? 30000);
     }, err => {
         clearTimeout(openTimer);

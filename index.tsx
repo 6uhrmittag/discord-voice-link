@@ -120,10 +120,10 @@ function SelfTest() {
     const [stop, setStop] = useState<(() => void) | null>(null);
     useEffect(() => () => stop?.(), [stop]);
 
-    async function start() {
+    async function start(measureDelay: boolean) {
         const { inputDevice, outputDevice, lanVolume, jitterBufferMs } = settings.store;
         log("self-test: button pressed");
-        setTest({ running: true, connected: false, error: null, stats: null, log: [] });
+        setTest({ running: true, connected: false, error: null, stats: null, log: [], hint: null, delayRunsMs: [], delayMs: null });
 
         let input = "", output = "";
         try {
@@ -137,10 +137,10 @@ function SelfTest() {
         }
 
         const end = runSelfTest(
-            { inputDeviceId: input, outputDeviceId: output, volume: lanVolume / 100, jitterBufferMs },
+            { inputDeviceId: input, outputDeviceId: output, volume: lanVolume / 100, jitterBufferMs, measureDelay },
             state => {
                 setTest(state);
-                if (!state.running) log("self-test:", state.error ?? "done", state.stats, state.log);
+                if (!state.running) log("self-test:", state.error ?? "done", state.delayMs, state.stats, state.log);
             }
         );
         setStop(() => end);
@@ -149,12 +149,24 @@ function SelfTest() {
     const stats = test?.stats;
     return (
         <div className="vc-lanlink-selftest">
-            <Button size="small" variant="secondary" disabled={test?.running} onClick={start}>
-                Test audio on this PC (30 s)
-            </Button>
+            <div className="vc-lanlink-buttons">
+                <Button size="small" variant="secondary" disabled={test?.running} onClick={() => start(false)}>
+                    Test audio on this PC (30 s)
+                </Button>
+                <Button size="small" variant="secondary" disabled={test?.running} onClick={() => start(true)}>
+                    Measure the delay
+                </Button>
+            </div>
             <Paragraph className="vc-lanlink-hint">
-                Plays your own microphone back to you through the same path the LAN link uses. Needs no second PC. Wear headphones.
+                The test plays your own microphone back to you through the same path the LAN link uses. Needs no second PC. Wear headphones.
+                To measure the delay, hold one headphone cup directly against the microphone: five beeps are timed on their way through microphone, audio path and headphone.
             </Paragraph>
+            {test?.hint && <Paragraph weight="medium">{test.hint}</Paragraph>}
+            {test?.delayMs != null && (
+                <Paragraph weight="medium" className="vc-lanlink-phase-connected">
+                    Delay microphone to headphone: {test.delayMs.toFixed(0)} ms (single beeps: {test.delayRunsMs.map(ms => ms.toFixed(0)).join(", ")})
+                </Paragraph>
+            )}
             {test && <Paragraph className={test.error ? "vc-lanlink-phase-error" : undefined}>{describeSelfTest(test)}</Paragraph>}
             {stats && (
                 <Paragraph className="vc-lanlink-stats">

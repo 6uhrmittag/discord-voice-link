@@ -81,6 +81,7 @@ Stuck on `discovering`? In this order:
 | Gate on push to talk | In push-to-talk mode, send LAN audio only while Discord shows you as speaking |
 | Show stats | RTT, jitter buffer delay (with its own target and minimum), jitter, packet loss, packets per second and frame size, here and in the console as `[LanLink]` |
 | Test audio on this PC | 30 seconds of your own microphone through the full LAN audio path, with the jitter buffer numbers. Changes nothing in Discord |
+| Measure the delay | Hold one headphone cup directly against the microphone. Five beeps are timed on their way through microphone, audio path and headphone. The result is the delay of the LAN audio path on this PC, without the network (which adds under 1 ms on a cable) |
 
 Changing a setting restarts the link.
 
@@ -119,7 +120,7 @@ Every push runs in [GitHub Actions](.github/workflows/ci.yml):
 
 - [ ] The prebuilt build running in a real Discord
 - [ ] Updates arriving by themselves through Equicord's updater
-- [ ] Opening the mic a second time while Discord uses it
+- [x] Opening the mic a second time while Discord uses it (one PC, self-test)
 - [ ] Audio between two PCs
 - [ ] Auto-mute and restore in the real client (leave channel, switch channel, pull the cable, close Discord, kill Discord)
 - [ ] The **LAN** pill in the voice channel (the patch may not match the current Discord build; the link works without it)
@@ -132,14 +133,15 @@ Built so far against Equicord [`87dcb6a`](https://github.com/Equicord/Equicord/c
 
 Goal: 35–60 ms mouth to ear, against roughly 100–200 ms through Discord. Below about 40 ms the LAN voice blends with the real voice you still hear through the headphones instead of sounding like an echo. That is the point, not a benchmark number.
 
-The stats only cover network and jitter buffer, not microphone and headphone buffering. The real number comes from a clap test: a phone records next to one person's mic while the other person's headphone is pressed against the phone. Clap. The recording has the clap twice; the gap between them is the delay. Once with LanLink off, once on.
+The stats only cover network and jitter buffer, not microphone and headphone buffering. **Measure the delay** in the settings times the whole path on one PC: a beep goes out of the headphone, into the microphone held against it, through the audio path and out of the headphone again, and the gap between the two is the delay. For Discord's own path there is no such button; that number comes from a clap test: a phone records next to one person's mic while the other person's headphone is pressed against the phone. Clap. The recording has the clap twice; the gap between them is the delay. Once with LanLink off, once on.
 
 | Path | Mouth to ear | Jitter buffer (stats) | RTT (stats) |
 |---|---|---|---|
 | Discord only | not yet measured | | |
-| LanLink | not yet measured | not yet measured | not yet measured |
+| LanLink, one PC (Measure the delay) | not yet measured | 30 ms (first PC, Razer Seiren V3 Mini) | |
+| LanLink, two PCs | not yet measured | not yet measured | not yet measured |
 
-One open risk: in the headless test the jitter buffer sat between 40 and 260 ms from run to run and reported that as its own minimum, so a 0 ms target didn't lower it. That machine has no real audio device, so this probably says little about a real PC, but it's the first number to look at, and **Test audio on this PC** shows it without a second PC. If it doesn't come down to about 20 ms or less on real hardware, WebRTC inside Discord can't reach the goal. Plan B is then [SonoBus](https://sonobus.net/) for the audio, with LanLink reduced to finding the peer, auto-mute and the pill.
+The jitter buffer is the part to watch. Chromium doesn't go to the 0 ms that LanLink asks for; it keeps its own minimum. On the first real PC that was 30 ms (minimum 20 ms) with the microphone and headphones picked by name in the settings, and 60 ms in an earlier run on the Windows default devices. One run each, so whether the device choice is the reason isn't known yet. **Test audio on this PC** shows the numbers. If it doesn't come down to about 20 ms or less on real hardware, WebRTC inside Discord can't reach the goal. Plan B is then [SonoBus](https://sonobus.net/) for the audio, with LanLink reduced to finding the peer, auto-mute and the pill.
 
 ## Known limits
 
@@ -165,7 +167,7 @@ index.tsx     plugin definition, settings, flux listeners, pill, status UI
 automute.ts   when the link is "active", and what that does to Discord and the LAN audio
 state.ts      link state machine, ties native.ts and rtc.ts together
 rtc.ts        WebRTC session, no Discord imports
-selftest.ts   the one-PC audio test: two sessions wired together
+selftest.ts   the one-PC audio test and delay measurement: two sessions wired together
 native.ts     Discord's main process: UDP discovery and setup-message transport
 protocol.ts   message format and signatures
 discord.ts    every access to Discord's stores and actions
