@@ -77,6 +77,7 @@ index.tsx     plugin definition, settings, flux listeners, pill patch, status UI
 automute.ts   "active" = connected && same voice channel; mute/restore + audio gates. Pure, deps injected
 state.ts      link state machine; drives native.ts and rtc.ts. Deps replaceable for tests
 rtc.ts        WebRTC session. No imports at all, runs in plain Chrome (dev/rtc-test.html)
+selftest.ts   one-PC audio test (two RtcSessions wired together), button in the settings panel
 native.ts     Electron main process: UDP socket, hellos, signaling transport, long-poll to renderer
 protocol.ts   wire format + HMAC. Pure
 discord.ts    ALL access to Discord stores/actions. Discord updates break things here: one file to fix
@@ -129,6 +130,9 @@ clone Equicord somewhere outside this repo, copy `*.ts *.tsx *.css` into
 
 `pnpm build` is esbuild and does **not** type-check; always run `pnpm testTsc` too.
 
+The Chrome test checks the frame size as captured audio per packet (`sendFrameMs`), not as
+packets per second: the fake microphone's timer slips when the machine is busy.
+
 Code style follows Equicord where cheap: SPDX header on every source file, no `any`, natural
 text in messages. Equicord's own `CLAUDE.md` is guidance for upstream contributions; this
 plugin keeps its multi-file split on purpose (testability).
@@ -141,7 +145,8 @@ plugin keeps its multi-file split on purpose (testability).
    permission handlers allow it for its own origin (checked in `discord_desktop_core`), but it
    has not run on real hardware.
 2. Jitter buffer floor. Headless Chrome reported 40–260 ms minimum regardless of target. Likely
-   an artifact of the fake audio device. First thing to read on real PCs ("Show stats").
+   an artifact of the fake audio device. First thing to read on real PCs: the self-test button
+   in the settings shows it without a second PC.
 3. The pill patch uses the same anchor as Equicord's CallTimer (`VOICE_PANEL}}` /
    `GUEST_NAME_SUFFIX`). Not verified against a live Discord bundle.
 4. Push to talk: do own `SPEAKING` events fire for PTT? If not, document it and keep voice

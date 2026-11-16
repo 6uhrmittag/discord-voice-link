@@ -45,6 +45,8 @@ Both people do this:
    - **Peer user ID**: the other person's Discord user ID (Settings → Advanced → Developer Mode, then right-click them → Copy User ID)
    - **Shared secret**: any text, the same on both PCs
 
+**Try it alone first:** the LanLink settings have a button **Test audio on this PC (10 s)**. It plays your own microphone back to you through the same path the link uses, no second PC needed. You should hear yourself with a very short delay. If it fails, the message says why (usually the microphone).
+
 Join the same voice channel. The status line in the LanLink settings goes `discovering` → `connecting` → `connected`, and a green **LAN** pill appears next to the other person in the voice channel.
 
 **Updates** come by themselves: this build's updater (Settings → Equicord → Updater) looks at this repository's releases. Running `install.ps1` again does the same by hand.
@@ -77,7 +79,8 @@ Stuck on `discovering`? In this order:
 | LAN volume | Volume of the other person over the LAN. Discord's own volume slider for them does nothing while they're muted there |
 | Jitter buffer target | 0 ms = lowest delay. Raise it if the audio crackles |
 | Gate on push to talk | In push-to-talk mode, send LAN audio only while Discord shows you as speaking |
-| Show stats | RTT, jitter buffer delay (with its own target and minimum), jitter, packet loss and packets per second, here and in the console as `[LanLink]` |
+| Show stats | RTT, jitter buffer delay (with its own target and minimum), jitter, packet loss, packets per second and frame size, here and in the console as `[LanLink]` |
+| Test audio on this PC | 10 seconds of your own microphone through the full LAN audio path, with the jitter buffer numbers. Changes nothing in Discord |
 
 Changing a setting restarts the link.
 
@@ -107,12 +110,15 @@ Every push runs in [GitHub Actions](.github/workflows/ci.yml):
 | Finding the peer and passing setup messages (real UDP sockets on one machine) | unit tests |
 | Auto-mute rules: mute, restore, crash recovery, manual unmute, mute/deafen/push-to-talk | unit tests |
 | Link state machine: who offers, retries and backoff, restarts, stale messages | unit tests |
-| Audio session in a real headless Chrome: connects, 10 ms Opus frames (about 100 packets/s) | loopback test |
+| Audio session in a real headless Chrome: connects, 10 ms Opus frames | loopback test |
+| The settings' audio self-test, in the same headless Chrome | loopback test |
+| `install.ps1`: download, swap, backup, restore | by hand, against a real release, in a scratch folder |
 | Type-check and build inside Equicord | every push, and daily against Equicord's newest commit |
 
 **Not tested yet, needs two real PCs:**
 
-- [ ] The prebuilt build running in a real Discord (`install.ps1` itself is tested: download, swap, backup, restore)
+- [ ] The prebuilt build running in a real Discord
+- [ ] Updates arriving by themselves through Equicord's updater
 - [ ] Opening the mic a second time while Discord uses it
 - [ ] Audio between two PCs
 - [ ] Auto-mute and restore in the real client (leave channel, switch channel, pull the cable, close Discord, kill Discord)
@@ -133,7 +139,7 @@ The stats only cover network and jitter buffer, not microphone and headphone buf
 | Discord only | not yet measured | | |
 | LanLink | not yet measured | not yet measured | not yet measured |
 
-One open risk: in the headless test the jitter buffer sat between 40 and 260 ms from run to run and reported that as its own minimum, so a 0 ms target didn't lower it. That machine has no real audio device, so this probably says little about a real PC, but it's the first number to look at ("Show stats"). If it doesn't come down to about 20 ms or less on real hardware, WebRTC inside Discord can't reach the goal. Plan B is then [SonoBus](https://sonobus.net/) for the audio, with LanLink reduced to finding the peer, auto-mute and the pill.
+One open risk: in the headless test the jitter buffer sat between 40 and 260 ms from run to run and reported that as its own minimum, so a 0 ms target didn't lower it. That machine has no real audio device, so this probably says little about a real PC, but it's the first number to look at, and **Test audio on this PC** shows it without a second PC. If it doesn't come down to about 20 ms or less on real hardware, WebRTC inside Discord can't reach the goal. Plan B is then [SonoBus](https://sonobus.net/) for the audio, with LanLink reduced to finding the peer, auto-mute and the pill.
 
 ## Known limits
 
@@ -159,6 +165,7 @@ index.tsx     plugin definition, settings, flux listeners, pill, status UI
 automute.ts   when the link is "active", and what that does to Discord and the LAN audio
 state.ts      link state machine, ties native.ts and rtc.ts together
 rtc.ts        WebRTC session, no Discord imports
+selftest.ts   the one-PC audio test: two sessions wired together
 native.ts     Discord's main process: UDP discovery and setup-message transport
 protocol.ts   message format and signatures
 discord.ts    every access to Discord's stores and actions

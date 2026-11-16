@@ -24,6 +24,8 @@ export interface RtcStats {
     jitterMs: number | null;
     packetsLost: number;
     sendPacketsPerSec: number | null;
+    /** Captured audio per sent packet. 10 ms when the Opus settings took effect, 20 ms if not. */
+    sendFrameMs: number | null;
 }
 
 export interface RtcOptions {
@@ -143,7 +145,7 @@ export class RtcSession {
     private disconnectTimer: ReturnType<typeof setTimeout> | null = null;
     private sendEnabled = false;
     private receiveMuted = true;
-    private lastStats: { at: number; delay: number; target: number; minimum: number; emitted: number; sent: number; } | null = null;
+    private lastStats: { at: number; delay: number; target: number; minimum: number; emitted: number; sent: number; captured: number; } | null = null;
     // Signals are processed strictly in order, and only once start() has finished.
     private chain: Promise<void> = Promise.resolve();
 
@@ -307,8 +309,8 @@ export class RtcSession {
     async getStats(): Promise<RtcStats | null> {
         if (!this.pc || this.closed) return null;
         const report = await this.pc.getStats();
-        const stats: RtcStats = { rttMs: null, jitterBufferMs: null, jitterBufferTargetMs: null, jitterBufferMinimumMs: null, jitterMs: null, packetsLost: 0, sendPacketsPerSec: null };
-        let delay = 0, target = 0, minimum = 0, emitted = 0, sent = 0;
+        const stats: RtcStats = { rttMs: null, jitterBufferMs: null, jitterBufferTargetMs: null, jitterBufferMinimumMs: null, jitterMs: null, packetsLost: 0, sendPacketsPerSec: null, sendFrameMs: null };
+        let delay = 0, target = 0, minimum = 0, emitted = 0, sent = 0, captured = 0;
 
         report.forEach(s => {
             if (s.type === "candidate-pair" && s.nominated && s.state === "succeeded" && typeof s.currentRoundTripTime === "number") {
@@ -322,20 +324,25 @@ export class RtcSession {
                 if (typeof s.jitter === "number") stats.jitterMs = s.jitter * 1000;
             } else if (s.type === "outbound-rtp" && s.kind === "audio") {
                 sent = s.packetsSent ?? 0;
+            } else if (s.type === "media-source" && s.kind === "audio") {
+                captured = s.totalSamplesDuration ?? 0;
             }
         });
 
         // Report the jitter buffer delays over the last interval, not the lifetime average.
         const now = performance.now();
-        const last = this.lastStats ?? { at: now, delay: 0, target: 0, minimum: 0, emitted: 0, sent: 0 };
+        const last = this.lastStats ?? { at: now, delay: 0, target: 0, minimum: 0, emitted: 0, sent: 0, captured: 0 };
         const samples = emitted - last.emitted;
         if (samples > 0) {
             stats.jitterBufferMs = (delay - last.delay) / samples * 1000;
             stats.jitterBufferTargetMs = (target - last.target) / samples * 1000;
             stats.jitterBufferMinimumMs = (minimum - last.minimum) / samples * 1000;
         }
-        if (this.lastStats) stats.sendPacketsPerSec = (sent - last.sent) / ((now - last.at) / 1000);
-        this.lastStats = { at: now, delay, target, minimum, emitted, sent };
+        if (this.lastStats) {
+            stats.sendPacketsPerSec = (sent - last.sent) / ((now - last.at) / 1000);
+            if (sent > last.sent && captured > last.captured) stats.sendFrameMs = (captured - last.captured) / (sent - last.sent) * 1000;
+        }
+        this.lastStats = { at: now, delay, target, minimum, emitted, sent, captured };
         return stats;
     }
 

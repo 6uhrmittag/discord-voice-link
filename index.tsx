@@ -7,6 +7,7 @@
 import "./style.css";
 
 import { definePluginSettings } from "@api/Settings";
+import { Button } from "@components/Button";
 import ErrorBoundary from "@components/ErrorBoundary";
 import { Paragraph } from "@components/Paragraph";
 import { debounce } from "@shared/debounce";
@@ -16,6 +17,7 @@ import { Select, showToast, useEffect, useState } from "@webpack/common";
 
 import { createActivation, MuteRecord } from "./automute";
 import * as discord from "./discord";
+import { runSelfTest, SelfTestState } from "./selftest";
 import { getLinkState, LinkState, log, setActive, setGates, setVolume, startLink, stopLink, subscribeLink } from "./state";
 
 function DevicePicker({ kind, settingKey }: { kind: "audioinput" | "audiooutput"; settingKey: "inputDevice" | "outputDevice"; }) {
@@ -92,9 +94,57 @@ function StatusPanel() {
             </Paragraph>
             {showStats && state.phase === "connected" && (
                 <Paragraph className="vc-lanlink-stats">
-                    RTT {formatMs(stats?.rttMs)} · jitter buffer {formatMs(stats?.jitterBufferMs)} (target {formatMs(stats?.jitterBufferTargetMs)}, minimum {formatMs(stats?.jitterBufferMinimumMs)}) · jitter {formatMs(stats?.jitterMs)} · lost {stats?.packetsLost ?? 0} · sending {stats?.sendPacketsPerSec?.toFixed(0) ?? "n/a"} packets/s
+                    RTT {formatMs(stats?.rttMs)} · jitter buffer {formatMs(stats?.jitterBufferMs)} (target {formatMs(stats?.jitterBufferTargetMs)}, minimum {formatMs(stats?.jitterBufferMinimumMs)}) · jitter {formatMs(stats?.jitterMs)} · lost {stats?.packetsLost ?? 0} · sending {stats?.sendPacketsPerSec?.toFixed(0) ?? "n/a"} packets/s ({formatMs(stats?.sendFrameMs)} frames)
                 </Paragraph>
             )}
+            <SelfTest />
+        </div>
+    );
+}
+
+function describeSelfTest(test: SelfTestState) {
+    if (test.error) return `Failed: ${test.error}`;
+    if (test.running) return test.connected ? "Running. Speak: you should hear yourself with a very short delay." : "Starting...";
+    return "Done.";
+}
+
+function SelfTest() {
+    const [test, setTest] = useState<SelfTestState | null>(null);
+    const [stop, setStop] = useState<(() => void) | null>(null);
+    useEffect(() => () => stop?.(), [stop]);
+
+    async function start() {
+        const { inputDevice, outputDevice, lanVolume, jitterBufferMs } = settings.store;
+        const [input, output] = await Promise.all([
+            discord.resolveBrowserDevice("audioinput", inputDevice),
+            discord.resolveBrowserDevice("audiooutput", outputDevice)
+        ]);
+        const end = runSelfTest(
+            { inputDeviceId: input, outputDeviceId: output, volume: lanVolume / 100, jitterBufferMs },
+            state => {
+                setTest(state);
+                if (!state.running) log("self-test:", state.error ?? "done", state.stats, state.log);
+            }
+        );
+        setStop(() => end);
+    }
+
+    const stats = test?.stats;
+    return (
+        <div className="vc-lanlink-selftest">
+            <Button size="small" variant="secondary" disabled={test?.running} onClick={start}>
+                Test audio on this PC (10 s)
+            </Button>
+            <Paragraph className="vc-lanlink-hint">
+                Plays your own microphone back to you through the same path the LAN link uses. Needs no second PC. Wear headphones.
+            </Paragraph>
+            {test && <Paragraph className={test.error ? "vc-lanlink-phase-error" : undefined}>{describeSelfTest(test)}</Paragraph>}
+            {stats && (
+                <Paragraph className="vc-lanlink-stats">
+                    jitter buffer {formatMs(stats.jitterBufferMs)} (target {formatMs(stats.jitterBufferTargetMs)}, minimum {formatMs(stats.jitterBufferMinimumMs)}) · sending {stats.sendPacketsPerSec?.toFixed(0) ?? "n/a"} packets/s ({formatMs(stats.sendFrameMs)} frames) · lost {stats.packetsLost}
+                </Paragraph>
+            )}
+            {test && !test.running && test.log.map((line, i) => <Paragraph key={i} className="vc-lanlink-stats vc-lanlink-hint">{line}</Paragraph>)}
         </div>
     );
 }
@@ -294,7 +344,10 @@ export default definePlugin({
         AUDIO_TOGGLE_SELF_DEAF: syncSoon,
         AUDIO_SET_MODE: syncSoon,
         // The own user is not known yet when the plugin starts during Discord's boot.
-        CONNECTION_OPEN: () => void reconfigure(),
+        // Only then: a reconnect of Discord's gateway must not restart a healthy link.
+        CONNECTION_OPEN() {
+            if (getLinkState().phase === "disabled") reconfigure();
+        },
         SPEAKING({ userId }: { userId: string; }) {
             if (userId === discord.getOwnId()) syncSoon();
         }

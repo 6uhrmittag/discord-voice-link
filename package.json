@@ -9,7 +9,7 @@
     },
     "scripts": {
         "test": "node --import tsx --test \"tests/*.test.ts\"",
-        "test:rtc": "esbuild rtc.ts --format=esm --outfile=dev/rtc.js && node tests/rtc-loopback.mjs"
+        "test:rtc": "esbuild rtc.ts --format=esm --outfile=dev/rtc.js && esbuild selftest.ts --bundle --format=esm --outfile=dev/selftest.js && node tests/rtc-loopback.mjs"
     },
     "devDependencies": {
         "esbuild": "^0.25.0",

@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url";
 
 import puppeteer from "puppeteer-core";
 
+const mean = values => values.reduce((a, b) => a + b, 0) / values.length;
 const dev = join(dirname(fileURLToPath(import.meta.url)), "..", "dev");
 const chrome = [
     process.env.CHROME,
@@ -26,7 +27,7 @@ assert.ok(chrome, "No Chrome found. Set the CHROME environment variable.");
 const server = http.createServer((req, res) => {
     const path = req.url.split("?")[0];
     const file = path === "/" ? "rtc-test.html" : path.slice(1);
-    if (!["rtc-test.html", "rtc.js"].includes(file)) return void res.writeHead(404).end();
+    if (!["rtc-test.html", "rtc.js", "selftest.js"].includes(file)) return void res.writeHead(404).end();
     res.setHeader("content-type", file.endsWith(".js") ? "text/javascript" : "text/html");
     res.end(readFileSync(join(dev, file)));
 });
@@ -47,7 +48,7 @@ try {
     await page.click("#loop");
 
     await page.waitForFunction(() => window.results.connected.length === 2, { timeout: 20000 });
-    await new Promise(resolve => setTimeout(resolve, 5000));
+    await new Promise(resolve => setTimeout(resolve, 6000));
     const results = await page.evaluate(() => window.results);
     const log = await page.evaluate(() => document.getElementById("log").textContent);
 
@@ -65,16 +66,29 @@ try {
     assert.match(log, /jitterBufferTarget set to 0 ms/);
 
     for (const name of ["a", "b"]) {
-        const stats = results.stats.filter(s => s.name === name && s.sendPacketsPerSec != null).slice(-3);
+        const stats = results.stats.filter(s => s.name === name && s.sendFrameMs != null).slice(-3);
         assert.ok(stats.length > 0, `${name}: no stats`);
-        for (const s of stats) {
-            // 10 ms frames are 100 packets per second. 20 ms frames would be 50.
-            assert.ok(s.sendPacketsPerSec > 85 && s.sendPacketsPerSec < 115, `${name}: ${s.sendPacketsPerSec} packets/s, expected about 100`);
-            assert.equal(s.packetsLost, 0);
-        }
+        // Captured audio per packet: 10 ms with our Opus settings, 20 ms without. Unlike
+        // packets per second this does not drift when the machine is busy.
+        const frame = mean(stats.map(s => s.sendFrameMs));
+        assert.ok(frame > 9 && frame < 11.5, `${name}: ${frame} ms of audio per packet, expected 10`);
+        for (const s of stats) assert.equal(s.packetsLost, 0);
         console.log(name, JSON.stringify(stats.at(-1)));
     }
     console.log("rtc loopback ok");
+
+    // The plugin's own self-test (selftest.ts), as started from the settings panel.
+    await page.click("#selftest");
+    await page.waitForFunction(() => window.selfTest && !window.selfTest.running, { timeout: 30000 });
+    const selfTest = await page.evaluate(() => window.selfTest);
+    assert.equal(selfTest.error, null);
+    assert.equal(selfTest.connected, true);
+    assert.ok(selfTest.log.some(l => l.startsWith("send: mic opened")), "the mic was opened");
+    const selfTestFrame = mean((await page.evaluate(() => window.selfTestFrames)).slice(-3));
+    assert.ok(selfTestFrame > 9 && selfTestFrame < 11.5, `self-test: ${selfTestFrame} ms of audio per packet, expected 10`);
+    assert.ok(selfTest.stats.jitterBufferMs > 0, "audio arrived at the receiving side");
+    console.log("self-test", JSON.stringify(selfTest.stats));
+    console.log("self-test ok");
 } finally {
     await browser.close();
     server.close();

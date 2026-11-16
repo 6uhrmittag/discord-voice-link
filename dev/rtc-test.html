@@ -14,7 +14,7 @@
 <h2>Loopback</h2>
 <p>Two sessions inside this page, wired together directly. You hear your own mic through the full WebRTC path. Use
     headphones.</p>
-<button id="loop">Start loopback</button>
+<button id="loop">Start loopback</button><button id="selftest">Run the plugin's self-test</button>
 
 <h2>Two tabs or two PCs</h2>
 <p>Pick a role in each tab, then copy the outgoing box of one tab into the incoming box of the other and press Apply.
@@ -31,6 +31,7 @@
 
 <script type="module">
     import { RtcSession } from "./rtc.js";
+    import { runSelfTest } from "./selftest.js";
 
     const $ = id => document.getElementById(id);
     const log = (who, ...args) => {
@@ -66,6 +67,17 @@
         b = make("b", false, s => { if (s.sdp) results.sdp[s.t] = s.sdp; a.handleSignal(s); });
         window.sessions = { a, b };
         await Promise.all([a.start(), b.start()]);
+    };
+
+    // The same code as the "Test audio on this PC" button in the plugin settings.
+    window.selfTestFrames = [];
+    $("selftest").onclick = () => {
+        runSelfTest({ inputDeviceId: "", outputDeviceId: "", volume: 1, jitterBufferMs: jitterBufferMs ?? 0, durationMs: 6000 }, state => {
+            window.selfTest = state;
+            const frame = state.stats?.sendFrameMs;
+            if (frame != null && frame !== window.selfTestFrames.at(-1)) window.selfTestFrames.push(frame);
+            $("stats").textContent = `self-test: ${JSON.stringify(state, null, 1)}`;
+        });
     };
 
     let manual;
