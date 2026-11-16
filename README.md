@@ -112,7 +112,7 @@ Every push runs in [GitHub Actions](.github/workflows/ci.yml):
 
 **Not tested yet, needs two real PCs:**
 
-- [ ] The prebuilt install (`install.ps1`) on a PC with the normal Equicord
+- [ ] The prebuilt build running in a real Discord (`install.ps1` itself is tested: download, swap, backup, restore)
 - [ ] Opening the mic a second time while Discord uses it
 - [ ] Audio between two PCs
 - [ ] Auto-mute and restore in the real client (leave channel, switch channel, pull the cable, close Discord, kill Discord)

@@ -24,8 +24,8 @@ jobs:
     name: Unit tests and WebRTC loopback
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -44,7 +44,7 @@ jobs:
       bump: ${{ steps.pick.outputs.bump }}
       ref: ${{ steps.pick.outputs.ref }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           path: plugin
 
@@ -62,13 +62,13 @@ jobs:
           echo "bump=$bump" >> "$GITHUB_OUTPUT"
           echo "Equicord commit: $ref (pinned: $pinned, bump: $bump)" >> "$GITHUB_STEP_SUMMARY"
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           repository: Equicord/Equicord
           ref: ${{ steps.pick.outputs.ref }}
           path: equicord
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
 
@@ -163,7 +163,7 @@ jobs:
       contents: write
       actions: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Pin the new Equicord commit and start a release run
         env:
           GH_TOKEN: ${{ github.token }}
